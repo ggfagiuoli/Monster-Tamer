@@ -1,0 +1,2 @@
+Requests
+PySide6
