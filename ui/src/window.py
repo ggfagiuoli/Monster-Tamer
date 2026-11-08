@@ -1,8 +1,9 @@
 from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QLabel, QSpacerItem, QPushButton
 from PySide6.QtGui import QFont, QResizeEvent
 from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from typing import Self
-from src.helper import subWidget, ORIENTATION
+from src.helper import subWidget, ORIENTATION, Stretch, whFracOf
 from src.request_button import RequestButton
 from src.requesters import StubLoginRequester
 from src.body_getters import BodyGetter
@@ -18,11 +19,13 @@ class Screen(QWidget):
         self.navigation_requested.emit(screen)
 
 class Window(QMainWindow):
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Monster Tamer")
         self.setFixedSize(QSize(1024, 768))
         self.setDisplayedWidget(LoginScreen())
+        self.network_mgt = QNetworkAccessManager()
 
     def setDisplayedWidget(self, screen: Screen):
         screen.navigation_requested.connect(self.setDisplayedWidget)
@@ -33,7 +36,6 @@ class LoginScreen(Screen):
 
     def __init__(self):
         super().__init__()
-        self.spcrs = [QSpacerItem(0,self.height()*(1/3)),QSpacerItem(0,self.height()*(1/3))]
         self.usernameLabLine = LabeledLineEdit("Username")
         self.pwdLabLine = LabeledLineEdit("Pasword")
 
@@ -50,28 +52,19 @@ class LoginScreen(Screen):
 
         self.buttons = subWidget([loginBtn, registerBtn], ORIENTATION.HORIZONTAL)
 
+        layout.addStretch(1)
         layout.addWidget(tit)
-        layout.addSpacerItem(self.spcrs[0])
+        layout.addStretch(1)
         layout.addWidget(self.usernameLabLine, alignment=Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
         layout.addWidget(self.pwdLabLine, alignment=Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
         layout.addWidget(self.buttons)
-        layout.addSpacerItem(self.spcrs[1])
+        layout.addStretch(1)
 
         self.setLayout(layout)
 
     def resizeEvent(self: Self, event: QResizeEvent):
-        w, h = event.size().width(), event.size().height()
-        self.usernameLabLine.setFixedWidth(2*w/3)
-        self.pwdLabLine.setFixedWidth(2*w/3)
-        for sp in self.spcrs:
-            sp.changeSize(0, h/3)
+        whFracOf([(self.usernameLabLine, 2/3, None), (self.pwdLabLine, 2/3, None)], event.size())
 
-    def reset(self):
-        self.usernameLabLine.ledit.setText("")
-        self.pwdLabLine.ledit.setText("")
-        for el in self.buttons.children():
-            for el2 in el.children():
-                el2.reset()
 
 
 class LabeledLineEdit(QWidget):
@@ -89,7 +82,37 @@ class MainScreen(Screen):
     def __init__(self: Self):
         super().__init__()
         lay = QVBoxLayout()
-        btn = QPushButton("Go back")
-        btn.clicked.connect(lambda: self.emit_navigation(LoginScreen()))
-        lay.addWidget(btn)
+
+        self.logout_btn     = QPushButton("Log Out")
+        self.encounter_btn  = QPushButton("Encounters")
+        self.collection_btn = QPushButton("Collection")
+        self.teams_btn      = QPushButton("Teams")
+        self.history_btn = QPushButton("History")
+        self.friends_btn = QPushButton("Friends")
+
+        self.logout_btn.clicked.connect(lambda _: self.navigation_requested.emit(LoginScreen()))
+
+        fnt = QFont()
+        fnt.setPointSize(30)
+
+        self.encounter_btn.setFont(fnt)
+        self.history_btn.setFont(fnt)
+        self.collection_btn.setFont(fnt)
+        self.teams_btn.setFont(fnt)
+
+        lay.addWidget(subWidget([self.logout_btn, Stretch(8), self.friends_btn], ORIENTATION.HORIZONTAL))
+        lay.addWidget(subWidget([self.encounter_btn, self.history_btn], ORIENTATION.HORIZONTAL), alignment=Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
+        lay.addWidget(subWidget([self.collection_btn, self.teams_btn], ORIENTATION.HORIZONTAL), alignment=Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
+        
         self.setLayout(lay)
+
+    def resizeEvent(self: Self, event: QResizeEvent):
+        whFracOf(
+            [
+                (self.encounter_btn, 0.4, 0.4),
+                (self.collection_btn, 0.4, 0.4),
+                (self.teams_btn, 0.4, 0.4),
+                (self.history_btn, 0.4, 0.4)
+            ],
+            event.size()
+        )
