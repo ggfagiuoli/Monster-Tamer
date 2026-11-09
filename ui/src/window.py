@@ -1,12 +1,14 @@
-from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QLabel, QSpacerItem, QPushButton
+from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QLabel, QPushButton, QScrollArea, QSizePolicy
 from PySide6.QtGui import QFont, QResizeEvent
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from typing import Self
-from src.helper import subWidget, ORIENTATION, Stretch, whFracOf
+from src.helper import subWidget, ORIENTATION, ALIGNMENT, Stretch, whFracOf, labelFromImage, subEHWidget, hExp
 from src.request_button import RequestButton
 from src.requesters import StubLoginRequester
 from src.body_getters import BodyGetter
+from src.team import Team, TEST_TEAM
+from src.monsters import TEST_MONSTER
 
 class Screen(QWidget):
     # Should be Signal(Screen) but it can't be done!
@@ -41,7 +43,8 @@ class LoginScreen(Screen):
 
         layout = QVBoxLayout()
 
-        tit = QLabel("Monster Tamer", alignment=Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
+        tit = QLabel("Monster Tamer", alignment=ALIGNMENT.HVCENTER.value)
+
         fnt = QFont()
         fnt.setPointSize(50)
         fnt.setWeight(QFont.Weight.Bold)
@@ -55,8 +58,8 @@ class LoginScreen(Screen):
         layout.addStretch(1)
         layout.addWidget(tit)
         layout.addStretch(1)
-        layout.addWidget(self.usernameLabLine, alignment=Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
-        layout.addWidget(self.pwdLabLine, alignment=Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(self.usernameLabLine, alignment=ALIGNMENT.HVCENTER.value)
+        layout.addWidget(self.pwdLabLine, alignment=ALIGNMENT.HVCENTER.value)
         layout.addWidget(self.buttons)
         layout.addStretch(1)
 
@@ -87,10 +90,14 @@ class MainScreen(Screen):
         self.encounter_btn  = QPushButton("Encounters")
         self.collection_btn = QPushButton("Collection")
         self.teams_btn      = QPushButton("Teams")
-        self.history_btn = QPushButton("History")
-        self.friends_btn = QPushButton("Friends")
+        self.history_btn    = QPushButton("History")
+        self.friends_btn    = QPushButton("Friends")
 
-        self.logout_btn.clicked.connect(lambda _: self.navigation_requested.emit(LoginScreen()))
+        teamlis = [Team((TEST_MONSTER, None, None)),Team((None, TEST_MONSTER, None)),Team((None, None, TEST_MONSTER))]
+        teamlis.extend([TEST_TEAM]*20)
+
+        self.logout_btn.clicked.connect(lambda _: self.emit_navigation(LoginScreen()))
+        self.teams_btn.clicked.connect(lambda _: self.emit_navigation(TeamsScreen(teamlis)))
 
         fnt = QFont()
         fnt.setPointSize(30)
@@ -100,9 +107,9 @@ class MainScreen(Screen):
         self.collection_btn.setFont(fnt)
         self.teams_btn.setFont(fnt)
 
-        lay.addWidget(subWidget([self.logout_btn, Stretch(8), self.friends_btn], ORIENTATION.HORIZONTAL))
-        lay.addWidget(subWidget([self.encounter_btn, self.history_btn], ORIENTATION.HORIZONTAL), alignment=Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
-        lay.addWidget(subWidget([self.collection_btn, self.teams_btn], ORIENTATION.HORIZONTAL), alignment=Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter)
+        lay.addWidget(subWidget([self.logout_btn, Stretch(1), self.friends_btn], ORIENTATION.HORIZONTAL))
+        lay.addWidget(subWidget([self.encounter_btn, self.history_btn], ORIENTATION.HORIZONTAL), alignment=ALIGNMENT.HVCENTER.value)
+        lay.addWidget(subWidget([self.collection_btn, self.teams_btn], ORIENTATION.HORIZONTAL), alignment=ALIGNMENT.HVCENTER.value)
         
         self.setLayout(lay)
 
@@ -116,3 +123,29 @@ class MainScreen(Screen):
             ],
             event.size()
         )
+
+class TeamsScreen(Screen):
+    def __init__(self: Self, teams: list[Team]):
+        super().__init__()
+        lay = QVBoxLayout()
+
+        self.back_btn    = QPushButton("<- Back")
+        self.scroll_area = QScrollArea()
+
+        self.back_btn.clicked.connect(lambda _: self.emit_navigation(MainScreen()))
+
+        self.scroll_area.setWidget(
+            subEHWidget(
+                [
+                    subEHWidget(
+                        [
+                            (subEHWidget([hExp(labelFromImage(monster.image)), hExp(QLabel(monster.name, alignment=ALIGNMENT.HVCENTER.value))] if monster is not None else [hExp(QLabel("None", alignment=ALIGNMENT.HVCENTER.value))], ORIENTATION.VERTICAL), Stretch(1)) for monster in team.monsters
+                        ], ORIENTATION.HORIZONTAL) for team in teams
+                ], ORIENTATION.VERTICAL)
+        )
+        self.scroll_area.setWidgetResizable(True)
+
+        lay.addWidget(subWidget([self.back_btn, Stretch(9)], ORIENTATION.HORIZONTAL))
+        lay.addWidget(self.scroll_area)
+
+        self.setLayout(lay)

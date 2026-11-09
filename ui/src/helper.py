@@ -1,6 +1,9 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout
-from PySide6.QtCore import QSize
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSizePolicy
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QImage, QPixmap
 from dataclasses import dataclass
+from typing import Any
+from enum import Enum
 
 @dataclass(frozen=True)
 class Stretch:
@@ -9,28 +12,34 @@ class Stretch:
     def __post_init__(self):
         object.__setattr__(self, "size", max(0, self.size))
 
-# Merely meant to be used like an enum
-class ORIENTATION:
-    class ENUM:
-        def __init__(self, o):
-            self.o = o
+class ORIENTATION(Enum):
+    HORIZONTAL = 0
+    VERTICAL = 1
 
-        def __eq__(self, other):
-            return self.o == other.o
+class ALIGNMENT(Enum):
+    HVCENTER = Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter
 
-    HORIZONTAL = ENUM(0)
-    VERTICAL = ENUM(1)
-
-def subWidget(wids: list[QWidget | Stretch], orientation: ORIENTATION.ENUM):
+def subWidget(wids: list[QWidget | tuple[QWidget, Stretch] | Stretch], orientation: ORIENTATION):
     qw = QWidget()
     lay = QHBoxLayout() if orientation == ORIENTATION.HORIZONTAL else QVBoxLayout()
     for wid in wids:
         if type(wid) is Stretch:
             lay.addStretch(wid.size)
             continue
+        if isinstance(wid, tuple):
+            (w, s) = wid
+            lay.addWidget(w, s.size)
+            continue
         lay.addWidget(wid)
     qw.setLayout(lay)
     return qw
+
+def subEHWidget(wids: list[QWidget | tuple[QWidget, Stretch] | Stretch], orientation: ORIENTATION):
+    return bPolicy(subWidget(wids, orientation), QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+
+def bPolicy(wid: QWidget, polh, polv):
+    wid.setSizePolicy(polh, polv)
+    return wid
 
 def whFracOf(wids_frac: list[tuple[QWidget, float | None, float | None]], sz: QSize):
     w = sz.width()
@@ -40,3 +49,12 @@ def whFracOf(wids_frac: list[tuple[QWidget, float | None, float | None]], sz: QS
             wid.setFixedWidth(int(fracw * w))
         if frach is not None:
             wid.setFixedHeight(int(frach * h))
+
+def labelFromImage(img: QImage):
+    lab = QLabel()
+    lab.setPixmap(QPixmap.fromImage(img))
+    return lab
+
+def hExp(wid: QWidget):
+    wid.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+    return wid
