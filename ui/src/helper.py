@@ -58,3 +58,46 @@ def labelFromImage(img: QImage):
 def hExp(wid: QWidget):
     wid.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
     return wid
+
+class BidirectionalIter:
+    def __init__(self, collection, start: int = -1):
+        self.collection = list(collection)
+        self.index = start
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        return self.next()
+
+    def has_next(self):
+        return self.index + 1 < len(self.collection)
+
+    def has_prev(self):
+        return self.index - 1 >= 0
+
+    def next(self):
+        if not self.has_next():
+            raise StopIteration
+        self.index += 1
+        return self.collection[self.index]
+
+    def next_and_self(self):
+        self.next()
+        return self
+
+    def current(self):
+        if 0 <= self.index < len(self.collection):
+            return self.collection[self.index]
+        print(None)
+        return None
+
+    def prev(self):
+        if not self.has_prev():
+            raise StopIteration
+        self.index -= 1
+        return self.collection[self.index]
+
+    def prev_and_self(self):
+        self.prev()
+        return self

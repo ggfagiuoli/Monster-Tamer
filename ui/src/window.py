@@ -1,14 +1,15 @@
-from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QLabel, QPushButton, QScrollArea, QSizePolicy
-from PySide6.QtGui import QFont, QResizeEvent
-from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QLabel, QPushButton, QScrollArea, QFrame, QGridLayout
+from PySide6.QtGui import QFont, QResizeEvent, QCursor
+from PySide6.QtCore import QSize, Qt, Signal, QObject, QEvent
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from typing import Self
-from src.helper import subWidget, ORIENTATION, ALIGNMENT, Stretch, whFracOf, labelFromImage, subEHWidget, hExp
+from src.helper import subWidget, ORIENTATION, ALIGNMENT, Stretch, whFracOf, labelFromImage, subEHWidget, BidirectionalIter
 from src.request_button import RequestButton
 from src.requesters import StubLoginRequester
 from src.body_getters import BodyGetter
 from src.team import Team, TEST_TEAM
-from src.monsters import TEST_MONSTER
+from src.monsters import Monster, TEST_MONSTER
+from functools import partial
 
 class Screen(QWidget):
     # Should be Signal(Screen) but it can't be done!
@@ -93,8 +94,8 @@ class MainScreen(Screen):
         self.history_btn    = QPushButton("History")
         self.friends_btn    = QPushButton("Friends")
 
-        teamlis = [Team((TEST_MONSTER, None, None)),Team((None, TEST_MONSTER, None)),Team((None, None, TEST_MONSTER))]
-        teamlis.extend([TEST_TEAM]*20)
+        teamlis = [Team(1, (TEST_MONSTER, None, None)),Team(2, (None, TEST_MONSTER, None)),Team(3, (None, None, TEST_MONSTER))]
+        #teamlis.extend([TEST_TEAM]*20)
 
         self.logout_btn.clicked.connect(lambda _: self.emit_navigation(LoginScreen()))
         self.teams_btn.clicked.connect(lambda _: self.emit_navigation(TeamsScreen(teamlis)))
@@ -124,28 +125,114 @@ class MainScreen(Screen):
             event.size()
         )
 
+class CompactMonsterDisplay(QWidget):
+    def __init__(self, monster: Monster | None):
+        super().__init__()
+        lay = QVBoxLayout()
+        if monster is None:
+            lay.addWidget(QLabel("None"), alignment=ALIGNMENT.HVCENTER.value)
+        else:
+            lay.addWidget(labelFromImage(monster.image), alignment=ALIGNMENT.HVCENTER.value)
+            lay.addWidget(QLabel(monster.name), alignment=ALIGNMENT.HVCENTER.value)
+        self.setLayout(lay)
+
+class TeamDisplay(QFrame):
+    clicked = Signal(object)
+
+    def __init__(self: Self, team: Team):
+        super().__init__()
+        self.team = team
+        self.setFrameShape(QFrame.Shape.Box)
+        self.setLineWidth(2)
+        lay = QHBoxLayout()
+        for monster in team:
+            lay.addWidget(CompactMonsterDisplay(monster))
+        self.setLayout(lay)
+        self.setObjectName("TeamDisplay")
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit(self.team)
+        super().mousePressEvent(event)
+
+    def setHovered(self, b: bool):
+        if b:
+            self.setStyleSheet("QFrame#TeamDisplay { border: 2px solid #880000; border-radius: 5px }")
+        else:
+            self.setStyleSheet("")
+
+
+    def enterEvent(self, _):
+        self.setHovered(True)
+
+    def leaveEvent(self, _):
+        self.setHovered(False)
+        
+
 class TeamsScreen(Screen):
     def __init__(self: Self, teams: list[Team]):
         super().__init__()
         lay = QVBoxLayout()
 
         self.back_btn    = QPushButton("<- Back")
+        ts = [TeamDisplay(team) for team in teams]
+        for t in ts:
+            t.clicked.connect(partial(self.team_display_click, t.team))
+        self.team_displays = subEHWidget(ts, ORIENTATION.VERTICAL)
         self.scroll_area = QScrollArea()
 
         self.back_btn.clicked.connect(lambda _: self.emit_navigation(MainScreen()))
 
-        self.scroll_area.setWidget(
-            subEHWidget(
-                [
-                    subEHWidget(
-                        [
-                            (subEHWidget([hExp(labelFromImage(monster.image)), hExp(QLabel(monster.name, alignment=ALIGNMENT.HVCENTER.value))] if monster is not None else [hExp(QLabel("None", alignment=ALIGNMENT.HVCENTER.value))], ORIENTATION.VERTICAL), Stretch(1)) for monster in team.monsters
-                        ], ORIENTATION.HORIZONTAL) for team in teams
-                ], ORIENTATION.VERTICAL)
-        )
+        self.scroll_area.setWidget(self.team_displays)
         self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.verticalScrollBar().valueChanged.connect(self.update_hover)
 
         lay.addWidget(subWidget([self.back_btn, Stretch(9)], ORIENTATION.HORIZONTAL))
         lay.addWidget(self.scroll_area)
 
         self.setLayout(lay)
+
+    def update_hover(self):
+        pos = self.scroll_area.viewport().mapFromGlobal(QCursor.pos())
+        wid = self.scroll_area.viewport().childAt(pos)
+        for td in self.team_displays.findChildren(TeamDisplay):
+            td.setHovered(False)
+        while wid is not None:
+            if isinstance(wid, TeamDisplay):
+                wid.setHovered(True)
+                break
+            wid = wid.parent()
+
+    def team_display_click(self, team, _):
+        self.emit_navigation(MonsterInfoScreen(BidirectionalIter(team, 0)))
+
+class MonsterInfoPanel(Screen):
+    def __init__(self, monster: Monster | None):
+        super().__init__()
+        lay = QGridLayout()
+        if monster is None:
+            lay.addWidget(QLabel("None"), 0, 0)
+        else:
+            lay.addWidget(subWidget([labelFromImage(monster.image), QLabel(monster.name)], ORIENTATION.VERTICAL), 0, 0, 1, 2, alignment=ALIGNMENT.HVCENTER.value)
+            lay.addWidget(subWidget([QLabel(monster.name), *[QLabel(f"Stat {x}") for x in range(6)]], ORIENTATION.VERTICAL), 1, 0, alignment=ALIGNMENT.HVCENTER.value)
+            lay.addWidget(subWidget([QLabel(f"Move {x}: {y}") for (x, y) in enumerate(monster.moves)], ORIENTATION.VERTICAL), 1, 1, alignment=ALIGNMENT.HVCENTER.value)
+        self.setLayout(lay)
+
+class MonsterInfoScreen(Screen):
+    def __init__(self, it: BidirectionalIter):
+        super().__init__()
+        self.it = it
+        lay = QHBoxLayout()
+        btn1 = QPushButton("<")
+        btn1.clicked.connect(lambda _: self.emit_navigation(MonsterInfoScreen(self.it.prev_and_self())))
+        lay.addWidget(btn1, 1)
+        if not it.has_prev():
+            btn1.setDisabled(True)
+        lay.addWidget(MonsterInfoPanel(it.current()), 8)
+        btn2 = QPushButton(">")
+        btn2.clicked.connect(lambda _: self.emit_navigation(MonsterInfoScreen(self.it.next_and_self())))
+        lay.addWidget(btn2, 1)
+        if not it.has_next():
+            btn2.setDisabled(True)
+        self.setLayout(lay)
+
