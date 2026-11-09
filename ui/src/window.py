@@ -3,7 +3,7 @@ from PySide6.QtGui import QFont, QResizeEvent, QCursor
 from PySide6.QtCore import QSize, Qt, Signal, QObject, QEvent
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from typing import Self
-from src.helper import subWidget, ORIENTATION, ALIGNMENT, Stretch, whFracOf, labelFromImage, subEHWidget, BidirectionalIter
+from src.helper import subWidget, ORIENTATION, ALIGNMENT, Stretch, whFracOf, labelFromImage, subEHWidget, BidirectionalIter, QSizePolicy
 from src.request_button import RequestButton
 from src.requesters import StubLoginRequester
 from src.body_getters import BodyGetter
@@ -95,7 +95,7 @@ class MainScreen(Screen):
         self.friends_btn    = QPushButton("Friends")
 
         teamlis = [Team(1, (TEST_MONSTER, None, None)),Team(2, (None, TEST_MONSTER, None)),Team(3, (None, None, TEST_MONSTER))]
-        #teamlis.extend([TEST_TEAM]*20)
+        teamlis.extend([TEST_TEAM]*20)
 
         self.logout_btn.clicked.connect(lambda _: self.emit_navigation(LoginScreen()))
         self.teams_btn.clicked.connect(lambda _: self.emit_navigation(TeamsScreen(teamlis)))
@@ -224,6 +224,7 @@ class MonsterInfoScreen(Screen):
         self.it = it
         lay = QHBoxLayout()
         btn1 = QPushButton("<")
+        btn1.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         btn1.clicked.connect(lambda _: self.emit_navigation(MonsterInfoScreen(self.it.prev_and_self())))
         lay.addWidget(btn1, 1)
         if not it.has_prev():
@@ -231,6 +232,7 @@ class MonsterInfoScreen(Screen):
         lay.addWidget(MonsterInfoPanel(it.current()), 8)
         btn2 = QPushButton(">")
         btn2.clicked.connect(lambda _: self.emit_navigation(MonsterInfoScreen(self.it.next_and_self())))
+        btn2.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         lay.addWidget(btn2, 1)
         if not it.has_next():
             btn2.setDisabled(True)
