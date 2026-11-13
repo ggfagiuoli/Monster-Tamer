@@ -9,6 +9,7 @@ from src.requesters import StubLoginRequester
 from src.body_getters import BodyGetter
 from src.team import Team, TEST_TEAM
 from src.monsters import Monster, TEST_MONSTER
+from src.collection import MonsterCollection, TEST_COLLECTION
 from functools import partial
 
 class Screen(QWidget):
@@ -99,6 +100,7 @@ class MainScreen(Screen):
 
         self.logout_btn.clicked.connect(lambda _: self.emit_navigation(LoginScreen()))
         self.teams_btn.clicked.connect(lambda _: self.emit_navigation(TeamsScreen(teamlis)))
+        self.collection_btn.clicked.connect(lambda _: self.emit_navigation(CollectionScreen(TEST_COLLECTION)))
 
         fnt = QFont()
         fnt.setPointSize(30)
@@ -177,7 +179,7 @@ class TeamsScreen(Screen):
         self.back_btn    = QPushButton("<- Back")
         ts = [TeamDisplay(team) for team in teams]
         for t in ts:
-            t.clicked.connect(partial(self.team_display_click, t.team))
+            t.clicked.connect(partial(self.team_display_click, t.team, (TeamsScreen, [teams])))
         self.team_displays = subEHWidget(ts, ORIENTATION.VERTICAL)
         self.scroll_area = QScrollArea()
 
@@ -203,8 +205,8 @@ class TeamsScreen(Screen):
                 break
             wid = wid.parent()
 
-    def team_display_click(self, team, _):
-        self.emit_navigation(MonsterInfoScreen(BidirectionalIter(team, 0)))
+    def team_display_click(self, team, prev_scr, _):
+        self.emit_navigation(MonsterInfoScreen(BidirectionalIter(team, 0), prev_scr))
 
 class MonsterInfoPanel(Screen):
     def __init__(self, monster: Monster | None):
@@ -219,22 +221,93 @@ class MonsterInfoPanel(Screen):
         self.setLayout(lay)
 
 class MonsterInfoScreen(Screen):
-    def __init__(self, it: BidirectionalIter):
+    def __init__(self, it: BidirectionalIter, prev_scr):
         super().__init__()
+        (cls, args) = prev_scr
         self.it = it
         lay = QHBoxLayout()
+        quitbtn = QPushButton("<- Back")
+        quitbtn.clicked.connect(lambda _: self.emit_navigation(cls(*args)))
         btn1 = QPushButton("<")
         btn1.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
-        btn1.clicked.connect(lambda _: self.emit_navigation(MonsterInfoScreen(self.it.prev_and_self())))
-        lay.addWidget(btn1, 1)
+        btn1.clicked.connect(lambda _: self.emit_navigation(MonsterInfoScreen(self.it.prev_and_self(), prev_scr)))
+        lay.addWidget(subWidget([(quitbtn, Stretch(1)), (btn1, Stretch(9))], ORIENTATION.VERTICAL), 1)
         if not it.has_prev():
             btn1.setDisabled(True)
         lay.addWidget(MonsterInfoPanel(it.current()), 8)
         btn2 = QPushButton(">")
-        btn2.clicked.connect(lambda _: self.emit_navigation(MonsterInfoScreen(self.it.next_and_self())))
+        btn2.clicked.connect(lambda _: self.emit_navigation(MonsterInfoScreen(self.it.next_and_self(), prev_scr)))
         btn2.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         lay.addWidget(btn2, 1)
         if not it.has_next():
             btn2.setDisabled(True)
         self.setLayout(lay)
 
+class MonsterFrame(QFrame):
+    clicked = Signal(object)
+
+    def __init__(self, monster: Monster):
+        super().__init__()
+        self.setFrameShape(QFrame.Shape.Box)
+        self.setLineWidth(2)
+        self.setObjectName("MonsterFrame")
+        lay = QVBoxLayout()
+        if monster is None:
+            lay.addWidget(QLabel("None"))
+        else:
+            lay.addWidget(labelFromImage(monster.image))
+            lay.addWidget(QLabel(monster.name))
+        self.setLayout(lay)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit(None)
+        super().mousePressEvent(event)
+
+    def setHovered(self, b: bool):
+        if b:
+            self.setStyleSheet("QFrame#MonsterFrame { border: 2px solid #880000; border-radius: 5px }")
+        else:
+            self.setStyleSheet("")
+       
+    def enterEvent(self, _):
+        self.setHovered(True)
+
+    def leaveEvent(self, _):
+        self.setHovered(False)
+
+
+class CollectionScreen(Screen):
+    def __init__(self, collection: MonsterCollection):
+        super().__init__()
+        self.scroll_area = QScrollArea()
+        layInner = QGridLayout()
+        self.scroll_widg = QWidget()
+        self.frames = []
+        for (i, monster) in enumerate(collection):
+            frm = MonsterFrame(monster)
+            self.frames.append(frm)
+            frm.clicked.connect(lambda _, i=i: self.emit_navigation(MonsterInfoScreen(BidirectionalIter(collection, i), (CollectionScreen, [collection]))))
+            layInner.addWidget(frm, i//7, i%7)
+        self.scroll_widg.setLayout(layInner)
+        self.scroll_area.setWidget(self.scroll_widg)
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.verticalScrollBar().valueChanged.connect(self.update_hover)
+        lay = QVBoxLayout()
+        self.setLayout(lay)
+        self.quitbtn = QPushButton("<- Back")
+        self.quitbtn.clicked.connect(lambda _: self.emit_navigation(MainScreen()))
+        lay.addWidget(subWidget([self.quitbtn, Stretch(9)], ORIENTATION.HORIZONTAL))
+        lay.addWidget(self.scroll_area)
+        self.setLayout(lay)
+
+    def update_hover(self):
+        pos = self.scroll_area.viewport().mapFromGlobal(QCursor.pos())
+        wid = self.scroll_area.viewport().childAt(pos)
+        for frm in self.frames:
+            frm.setHovered(False)
+        while wid is not None:
+            if isinstance(wid, MonsterFrame):
+                wid.setHovered(True)
+                break
+            wid = wid.parent()
