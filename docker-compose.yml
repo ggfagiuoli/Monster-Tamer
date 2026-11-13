@@ -1,0 +1,136 @@
+name: monster-tamers
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # API Gateway: the only service with a port open to your machine.
+  # ---------------------------------------------------------------------------
+  gateway:
+    build: ./gateway
+    ports:
+      - "8443:8443"            # https://localhost:8443
+    volumes:
+      - ./certs/out/ca.crt:/certs/ca.crt:ro
+      - ./certs/out/gateway.crt:/certs/service.crt:ro
+      - ./certs/out/gateway.key:/certs/service.key:ro
+    depends_on:
+      monsters:
+        condition: service_healthy
+      account:
+        condition: service_healthy
+      encounter:
+        condition: service_healthy
+      ownership:
+        condition: service_healthy
+      historian:
+        condition: service_healthy
+    networks:
+      - backend
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Monsters: the example service. Copy this block for every new service.
+  # ---------------------------------------------------------------------------
+  monsters:
+    build: ./services/monsters
+    # No "ports:" here on purpose. Only other containers can reach it.
+    expose:
+      - "5002"
+    volumes:
+      # Each service only gets ITS OWN key, plus the CA to check the others.
+      - ./certs/out/ca.crt:/certs/ca.crt:ro
+      - ./certs/out/monsters.crt:/certs/service.crt:ro
+      - ./certs/out/monsters.key:/certs/service.key:ro
+    healthcheck:
+      # Calls its own /health over HTTPS. Change the port when you copy this.
+      test: ["CMD", "python", "-c", "import ssl,urllib.request; urllib.request.urlopen('https://localhost:5002/health', context=ssl.create_default_context(cafile='/certs/ca.crt'), timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - backend
+    restart: unless-stopped
+
+  account:
+    build: ./services/account
+    expose:
+      - "5000"
+    volumes:
+      # Each service only gets ITS OWN key, plus the CA to check the others.
+      - ./certs/out/ca.crt:/certs/ca.crt:ro
+      - ./certs/out/account.crt:/certs/service.crt:ro
+      - ./certs/out/account.key:/certs/service.key:ro
+    healthcheck:
+      # Calls its own /health over HTTPS. Change the port when you copy this.
+      test: ["CMD", "python", "-c", "import ssl,urllib.request; urllib.request.urlopen('https://localhost:5000/health', context=ssl.create_default_context(cafile='/certs/ca.crt'), timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - backend
+    restart: unless-stopped
+
+  ownership:
+    build: ./services/ownership
+    expose:
+      - "5001"
+    volumes:
+      # Each service only gets ITS OWN key, plus the CA to check the others.
+      - ./certs/out/ca.crt:/certs/ca.crt:ro
+      - ./certs/out/ownership.crt:/certs/service.crt:ro
+      - ./certs/out/ownership.key:/certs/service.key:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import ssl,urllib.request; urllib.request.urlopen('https://localhost:5001/health', context=ssl.create_default_context(cafile='/certs/ca.crt'), timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - backend
+    restart: unless-stopped
+
+  encounter:
+    build: ./services/encounter
+    expose:
+      - "5003"
+    volumes:
+      # Each service only gets ITS OWN key, plus the CA to check the others.
+      - ./certs/out/ca.crt:/certs/ca.crt:ro
+      - ./certs/out/encounter.crt:/certs/service.crt:ro
+      - ./certs/out/encounter.key:/certs/service.key:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import ssl,urllib.request; urllib.request.urlopen('https://localhost:5003/health', context=ssl.create_default_context(cafile='/certs/ca.crt'), timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - backend
+    restart: unless-stopped
+
+  historian:
+    build: ./services/historian
+    expose:
+      - "5004"
+    volumes:
+      # Each service only gets ITS OWN key, plus the CA to check the others.
+      - ./certs/out/ca.crt:/certs/ca.crt:ro
+      - ./certs/out/historian.crt:/certs/service.crt:ro
+      - ./certs/out/historian.key:/certs/service.key:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import ssl,urllib.request; urllib.request.urlopen('https://localhost:5004/health', context=ssl.create_default_context(cafile='/certs/ca.crt'), timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - backend
+    restart: unless-stopped
+
+  # TODO (task 13): one database per service, each with a named volume so data
+  # survives "docker compose down". Only its own service may connect to it.
+
+networks:
+  backend: {}

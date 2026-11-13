@@ -1,0 +1,12 @@
+# Generated certificates and keys: never commit these.
+certs/out/
+
+# Local secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/

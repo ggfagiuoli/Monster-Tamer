@@ -1,0 +1,130 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+
+  # -------------------------------------------------------------------------
+  # One run per service: tests, static analysis, dependency check, image scan.
+  # -------------------------------------------------------------------------
+  service:
+    name: ${{ matrix.service }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # TODO (guide step 5): add every service folder name here.
+        service: [monsters, account, ownership, encounter, historian]
+    defaults:
+      run:
+        working-directory: services/${{ matrix.service }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Unit tests
+        run: python -m pytest -q
+
+      - name: Static analysis (bandit)
+        run: bandit -r app -ll
+
+      - name: Dependency vulnerabilities (pip-audit)
+        run: pip-audit -r requirements.txt
+
+      - name: Build image
+        run: docker build -t monster-tamers/${{ matrix.service }}:ci .
+
+      - name: Image vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          image-ref: monster-tamers/${{ matrix.service }}:ci
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+  # -------------------------------------------------------------------------
+  # The gateway image gets the same scan.
+  # -------------------------------------------------------------------------
+  gateway:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t monster-tamers/gateway:ci gateway
+
+      - name: Image vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          image-ref: monster-tamers/gateway:ci
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+  # -------------------------------------------------------------------------
+  # Smoke test: start the real stack and call it through the gateway.
+  # -------------------------------------------------------------------------
+  smoke:
+    runs-on: ubuntu-24.04
+    needs: [service, gateway]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate certificates
+        run: bash certs/generate-certs.sh
+
+      - name: Start the backend
+        run: docker compose up --build --detach --wait --wait-timeout 120
+
+      - name: Call the gateway
+        run: |
+          set -e
+          CURL="curl --fail --silent --show-error --cacert certs/out/ca.crt"
+          $CURL https://localhost:8443/health
+          $CURL https://localhost:8443/monsters
+
+          # monsters
+          code=$(curl --silent --output /dev/null --write-out "%{http_code}" \
+                 --cacert certs/out/ca.crt https://localhost:8443/internal/monsters)
+          test "$code" = "404"
+
+          # account
+          code=$(curl -X POST --silent --output /dev/null --write-out "%{http_code}" \
+                  --cacert certs/out/ca.crt https://localhost:8443/auth/register)
+          test "$code" = "501"
+
+          # ownership
+          code=$(curl --silent --output /dev/null --write-out "%{http_code}" \
+                 --cacert certs/out/ca.crt https://localhost:8443/collection)
+          test "$code" = "501"
+
+          # encounter
+          code=$(curl --silent --output /dev/null --write-out "%{http_code}" \
+                 --cacert certs/out/ca.crt https://localhost:8443/encounters)
+          test "$code" = "501"
+
+          # historian
+          code=$(curl --silent --output /dev/null --write-out "%{http_code}" \
+                 --cacert certs/out/ca.crt https://localhost:8443/history)
+          test "$code" = "501"
+
+      - name: Show logs if something failed
+        if: failure()
+        run: docker compose logs
+
+      - name: Stop
+        if: always()
+        run: docker compose down --volumes
